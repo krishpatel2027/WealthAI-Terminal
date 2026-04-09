@@ -20,4 +20,4 @@ python-dotenv
 sqlalchemy
 psycopg2-binary
 uvicorn
-pandas_ta @ https://github.com/twopirllc/pandas-ta/archive/refs/heads/development.zip
+pandas-ta-classic
