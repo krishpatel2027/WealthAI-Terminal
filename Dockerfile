@@ -1,5 +1,5 @@
 # --- STAGE 1: Build Frontend ---
-FROM node:20-slim AS frontend_builder
+FROM node:20-slim AS frontend-builder
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm install
@@ -24,7 +24,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Copy the built frontend from Stage 1
-COPY --from=frontend_builder /app/frontend/dist ./frontend/dist
+COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # Expose the API port
 EXPOSE 8001
