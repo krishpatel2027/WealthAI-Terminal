@@ -189,8 +189,8 @@ export default function App() {
             </div>
           </div>
 
-          {/* RIGHT: Quantitative Analysis Sidebar (Replaces Buy/Sell Options) */}
-          <aside className="w-[400px] border-l border-slate-800/60 bg-[#111111] overflow-y-auto flex flex-col">
+          {/* RIGHT: Quantitative Analysis Sidebar (Advanced HUD) */}
+          <aside className="w-[450px] border-l border-slate-800/60 bg-[#0f1115] overflow-y-auto flex flex-col custom-scrollbar">
             
             {/* Error Banner */}
             {error && (
@@ -200,69 +200,149 @@ export default function App() {
               </div>
             )}
 
-            {/* Vitals Section */}
-            <div className="p-6 border-b border-slate-800/60">
-              <div className="flex items-center gap-2 mb-4">
-                <BarChart2 className="text-blue-500" size={18} />
-                <h3 className="font-semibold text-sm text-slate-300 uppercase tracking-wider">Technical Vitals</h3>
-              </div>
-              
-              {!data && !loading && (
-                 <div className="h-40 flex items-center justify-center text-slate-600 text-sm">Select a ticker to view vitals</div>
-              )}
-
-              {data && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-[#1a1a1a] rounded-lg p-3 border border-slate-800">
-                    <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-1">Latest Open</p>
-                    <p className="text-lg font-bold text-white">₹{data.open_price}</p>
-                  </div>
-                  <div className="bg-[#1a1a1a] rounded-lg p-3 border border-slate-800">
-                    <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold mb-1">Latest Close</p>
-                    <p className="text-lg font-bold text-slate-100">₹{data.close_price}</p>
-                  </div>
-                  <div className="bg-[#1a1a1a] rounded-lg p-3 border border-blue-900/30">
-                    <p className="text-[10px] text-blue-400 uppercase tracking-widest font-semibold mb-1">RSI (14)</p>
-                    <p className="text-lg font-bold text-white">{data.rsi_14}</p>
-                  </div>
-                  <div className="bg-[#1a1a1a] rounded-lg p-3 border border-blue-900/30">
-                    <p className="text-[10px] text-blue-400 uppercase tracking-widest font-semibold mb-1">SMA (20)</p>
-                    <p className="text-lg font-bold text-white max-w-[full] truncate">₹{data.sma_20}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* AI Thesis Section */}
-            <div className="p-6 flex-1 bg-gradient-to-b from-[#111111] to-[#0a0a0a]">
-              <div className="flex items-center gap-2 mb-4">
-                <Brain className="text-purple-400" size={18} />
-                <h3 className="font-semibold text-sm text-slate-300 uppercase tracking-wider">Agentic Thesis</h3>
-              </div>
-
-              {!data && !loading && (
-                 <div className="h-60 flex flex-col items-center justify-center text-slate-600 border border-dashed border-slate-800 rounded-lg">
-                    <BookOpen size={32} className="mb-2 opacity-50" />
-                    <span className="text-sm">Awaiting Analysis...</span>
+            {!data && !loading && (
+                 <div className="flex-1 flex flex-col items-center justify-center text-slate-600 border-2 border-dashed border-slate-800 rounded-xl max-h-[400px] m-6 p-8 relative">
+                    <div className="absolute inset-0 bg-blue-500/5 blur-[80px] rounded-full pointer-events-none"></div>
+                    <BookOpen size={40} className="mb-4 opacity-40 text-blue-400" />
+                    <span className="text-sm font-medium tracking-wide">Select Asset to Initiate AI Agent</span>
                  </div>
-              )}
+            )}
 
-              {loading && !data && (
-                <div className="h-60 flex flex-col items-center justify-center text-slate-500 gap-3 border border-dashed border-slate-800 rounded-lg">
-                  <Loader2 className="animate-spin text-blue-500" size={24} />
-                  <span className="text-sm">Consulting LLM Brain...</span>
+            {loading && !data && (
+                <div className="flex-1 flex flex-col items-center justify-center text-slate-500 gap-4 border-2 border-dashed border-slate-800 rounded-xl max-h-[400px] m-6 p-8">
+                  <Loader2 className="animate-spin text-emerald-500" size={32} />
+                  <span className="text-sm tracking-wider font-medium uppercase animate-pulse">Running Agentic Analysis...</span>
                 </div>
-              )}
+            )}
 
-              {data && (
-                <div className="bg-[#1a1a1a] border border-slate-800 rounded-xl p-5 shadow-inner">
-                  <p className="text-slate-300 leading-relaxed text-sm whitespace-pre-wrap font-medium">
+            {data && (
+              <div className="p-4 space-y-4 fade-in">
+                
+                {/* 1. AI VERDICT BANNER */}
+                <div className={`border rounded-xl p-5 relative overflow-hidden flex flex-col shadow-2xl
+                    ${data.signal?.includes('BUY') ? 'bg-emerald-950/20 border-emerald-500/30' : 
+                      data.signal?.includes('SELL') ? 'bg-red-950/20 border-red-500/30' : 'bg-amber-950/20 border-amber-500/30'}
+                `}>
+                  <div className="flex items-center gap-3 mb-3 relative z-10">
+                    <Activity className={`shrink-0 ${data.signal?.includes('BUY') ? 'text-emerald-400' : data.signal?.includes('SELL') ? 'text-red-400' : 'text-amber-400'}`} size={24} />
+                    <h2 className={`text-xl font-black tracking-widest uppercase ${data.signal?.includes('BUY') ? 'text-emerald-400' : data.signal?.includes('SELL') ? 'text-red-400' : 'text-amber-400'}`}>
+                      {data.signal || 'HOLD'}
+                    </h2>
+                  </div>
+                  <p className="text-slate-300 leading-relaxed text-sm relative z-10 font-medium">
                     {data.ai_thesis}
                   </p>
+                  
+                  {/* Visual Background Glow */}
+                  <div className={`absolute top-0 right-0 w-32 h-32 blur-[60px] rounded-full pointer-events-none
+                    ${data.signal?.includes('BUY') ? 'bg-emerald-500/20' : data.signal?.includes('SELL') ? 'bg-red-500/20' : 'bg-amber-500/20'}
+                  `}></div>
                 </div>
-              )}
-            </div>
 
+                {/* 2. EXECUTION PLAN */}
+                <div className="bg-[#15181e] border border-slate-800 rounded-xl p-4 shadow-lg">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Brain size={16} className="text-blue-400" />
+                    <h3 className="text-xs font-bold text-slate-300 uppercase tracking-widest">AI Trade Execution Plan</h3>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-red-950/30 border border-red-900/50 rounded-lg p-3">
+                      <p className="text-[10px] text-red-500 uppercase tracking-widest font-black mb-1">Stop Loss</p>
+                      <p className="text-xl font-bold text-red-200">₹{data.stop_loss || '...'}</p>
+                    </div>
+                    <div className="bg-emerald-950/30 border border-emerald-900/50 rounded-lg p-3">
+                      <p className="text-[10px] text-emerald-500 uppercase tracking-widest font-black mb-1">Target</p>
+                      <p className="text-xl font-bold text-emerald-200">₹{data.target_price || '...'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. SENTIMENT GAUGE */}
+                <div className="bg-[#15181e] border border-slate-800 rounded-xl p-5 shadow-lg">
+                  <div className="flex justify-between items-end mb-3">
+                    <h3 className="text-xs font-bold text-slate-300 uppercase tracking-widest">Sentiment Gauge</h3>
+                    <span className={`text-xs font-bold uppercase tracking-widest
+                      ${data.rsi_14 < 30 ? 'text-emerald-400' : data.rsi_14 > 70 ? 'text-red-400' : 'text-amber-400'}
+                    `}>
+                      {data.rsi_14 < 30 ? 'OVERSOLD (BUY ZONE)' : data.rsi_14 > 70 ? 'OVERBOUGHT (SELL ZONE)' : 'NEUTRAL'}
+                    </span>
+                  </div>
+                  
+                  {/* Gauge Bar */}
+                  <div className="relative h-2 rounded-full bg-gradient-to-r from-emerald-500 via-amber-500 to-red-500 mb-2 mt-4 shadow-inner">
+                     {/* Indicator Node */}
+                     <div 
+                        className="absolute w-4 h-6 border-2 border-[#15181e] bg-white rounded-md -top-2 transform -translate-x-1/2 shadow-lg transition-all duration-1000 ease-out"
+                        style={{ left: `${Math.min(Math.max((data.rsi_14 || 50), 0), 100)}%` }}
+                     ></div>
+                  </div>
+                  
+                  <div className="flex justify-between text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+                    <span>Oversold</span>
+                    <span>Neutral</span>
+                    <span>Overbought</span>
+                  </div>
+                </div>
+
+                {/* 4. MARKET VITALS & FUNDAMENTALS */}
+                <div className="grid grid-cols-2 gap-4">
+                  
+                  {/* Technicals */}
+                  <div className="bg-[#15181e] border border-slate-800 rounded-xl p-4 shadow-lg">
+                    <h3 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-3">Technicals</h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-slate-500 font-semibold uppercase">RSI (14)</span>
+                        <span className="text-sm font-bold text-blue-400">{data.rsi_14}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-xs text-slate-500 font-semibold uppercase">SMA (20)</span>
+                        <span className="text-sm font-bold text-blue-400 truncate max-w-[80px]">₹{data.sma_20}</span>
+                      </div>
+                      <div className="flex justify-between items-center pt-2 border-t border-slate-800/80">
+                         <span className="text-[10px] text-slate-500">Volty.</span>
+                         <span className="text-[10px] font-bold text-slate-300">{(Math.abs(data.close_price - data.open_price) / data.open_price * 100).toFixed(2)}%</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Fundamentals */}
+                  <div className="bg-[#15181e] border border-slate-800 rounded-xl p-4 shadow-lg relative overflow-hidden">
+                    <div className="absolute -right-4 -bottom-4 opacity-5">
+                       <TrendingUp size={80} />
+                    </div>
+                    <h3 className="text-xs font-bold text-slate-300 uppercase tracking-widest mb-3 border-b border-slate-800 pb-2">Fundamentals</h3>
+                    <div className="space-y-3 z-10 relative">
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] text-slate-400 font-semibold tracking-wider">Revenue</span>
+                        <span className="text-[10px] font-bold text-emerald-400">
+                           {data.fundamentals?.Total_Revenue ? `$${(data.fundamentals.Total_Revenue / 1e9).toFixed(1)}B` : 'N/A'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] text-slate-400 font-semibold tracking-wider">Free Cash</span>
+                        <span className="text-[10px] font-bold text-emerald-400">
+                            {data.fundamentals?.Free_Cash_Flow ? `$${(data.fundamentals.Free_Cash_Flow / 1e9).toFixed(1)}B` : 'N/A'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] text-slate-400 font-semibold tracking-wider">Assets</span>
+                        <span className="text-[10px] font-bold text-slate-200">
+                            {data.fundamentals?.Total_Assets ? `$${(data.fundamentals.Total_Assets / 1e9).toFixed(1)}B` : 'N/A'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-[10px] text-slate-400 font-semibold tracking-wider">Debt</span>
+                        <span className="text-[10px] font-bold text-red-400">
+                            {data.fundamentals?.Total_Debt ? `$${(data.fundamentals.Total_Debt / 1e9).toFixed(1)}B` : 'N/A'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            )}
           </aside>
         </div>
       </div>

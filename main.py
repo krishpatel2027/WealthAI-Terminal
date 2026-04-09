@@ -82,6 +82,7 @@ class VitalsResponse(BaseModel):
     rsi_14: float
     sma_20: float
     data: dict  # Full historical data for the frontend chart
+    fundamentals: dict # New: Contains cashflow and balance sheet
     data_source: str
 
 class AIAnalysisResponse(BaseModel):
@@ -89,6 +90,9 @@ class AIAnalysisResponse(BaseModel):
     latest_price: float
     rsi_14: float
     news_analyzed: int
+    signal: str
+    stop_loss: float
+    target_price: float
     ai_thesis: str
 
 class PopulateResponse(BaseModel):
@@ -96,6 +100,14 @@ class PopulateResponse(BaseModel):
     status: str
 
 # --- UTILITIES ---
+def extract_latest_fundamental(df, key):
+    try:
+        if df is not None and not df.empty and key in df.index:
+            return float(df.loc[key].iloc[0])
+        return 0.0
+    except Exception:
+        return 0.0
+
 def calculate_vitals(df):
     """Vectorized Pandas operations (Optimized)"""
     df['SMA_20'] = df['Close'].rolling(window=20).mean()
@@ -142,12 +154,32 @@ def get_vitals(ticker: str, period: str = "3mo"):
 
         latest_data = df.iloc[-1]
         
+        # Extract Fundamentals
+        fundamentals = {
+            "Total_Revenue": 0.0,
+            "Free_Cash_Flow": 0.0,
+            "Total_Assets": 0.0,
+            "Total_Debt": 0.0
+        }
+        try:
+            cf = stock.cashflow
+            bs = stock.balance_sheet
+            inc = stock.financials
+            
+            fundamentals["Total_Revenue"] = extract_latest_fundamental(inc, "Total Revenue")
+            fundamentals["Free_Cash_Flow"] = extract_latest_fundamental(cf, "Free Cash Flow")
+            fundamentals["Total_Assets"] = extract_latest_fundamental(bs, "Total Assets")
+            fundamentals["Total_Debt"] = extract_latest_fundamental(bs, "Total Debt")
+        except Exception as fe:
+            print(f"Fundamentals fetch warning: {fe}")
+
         response_data = VitalsResponse(
             ticker=ticker.upper(),
             latest_price=round(latest_data['Close'], 2),
             rsi_14=round(latest_data['RSI_14'], 2),
             sma_20=round(latest_data['SMA_20'], 2),
             data=df.to_dict(orient="index"),
+            fundamentals=fundamentals,
             data_source="fresh_api_fetch"
         )
 
@@ -197,7 +229,14 @@ def analyze_stock_agent(ticker: str):
         {news_context}
 
         TASK:
-        Provide [SIGNAL] (e.g. BUY) and a 3-sentence thesis. No hallucinations.
+        You must return exactly ONE valid JSON object and nothing else. Do not use markdown wrapping.
+        Format:
+        {{
+            "signal": "STRONG BUY" | "BUY" | "HOLD" | "SELL" | "STRONG SELL",
+            "stop_loss": <numeric float below current price if buy, above if sell>,
+            "target_price": <numeric float above current price if buy, below if sell>,
+            "thesis": "<String: 3 sentence explanation>"
+        }}
         """
 
         import time
@@ -210,8 +249,8 @@ def analyze_stock_agent(ticker: str):
                 ai_verdict = llm.invoke(prompt)
                 break
             except Exception as e:
-                if "503" in str(e) or "overloaded" in str(e).lower():
-                    print(f"Gemini Busy (Attempt {i+1}/{max_retries}). Retrying in {retry_delay}s...")
+                if "503" in str(e) or "overloaded" in str(e).lower() or "429" in str(e):
+                    print(f"API Busy (Attempt {i+1}/{max_retries}). Retrying in {retry_delay}s...")
                     time.sleep(retry_delay)
                     retry_delay *= 2 # Exponential backoff
                 else:
@@ -220,15 +259,32 @@ def analyze_stock_agent(ticker: str):
         if not ai_verdict:
             raise HTTPException(status_code=503, detail="AI Brain is currently overloaded. Please try again in 30 seconds.")
 
-        # Extract string content: ChatGoogleGenerativeAI returns AIMessage, OllamaLLM returns str
-        thesis_text = ai_verdict.content if hasattr(ai_verdict, 'content') else str(ai_verdict)
+        thesis_text_raw = ai_verdict.content if hasattr(ai_verdict, 'content') else str(ai_verdict)
+        
+        # Clean JSON
+        thesis_text_raw = thesis_text_raw.replace("```json", "").replace("```", "").strip()
+        
+        try:
+            parsed_json = json.loads(thesis_text_raw)
+            signal = parsed_json.get("signal", "HOLD")
+            stop_loss = float(parsed_json.get("stop_loss", vitals_data.latest_price * 0.95))
+            target_price = float(parsed_json.get("target_price", vitals_data.latest_price * 1.10))
+            thesis = parsed_json.get("thesis", "Unable to parse thesis text.")
+        except json.JSONDecodeError:
+            signal = "HOLD"
+            stop_loss = vitals_data.latest_price * 0.95
+            target_price = vitals_data.latest_price * 1.10
+            thesis = thesis_text_raw
 
         return AIAnalysisResponse(
             ticker=ticker.upper(),
             latest_price=vitals_data.latest_price,
             rsi_14=vitals_data.rsi_14,
             news_analyzed=len(docs),
-            ai_thesis=thesis_text
+            signal=signal.upper(),
+            stop_loss=round(stop_loss, 2),
+            target_price=round(target_price, 2),
+            ai_thesis=thesis
         )
 
     except Exception as e:
