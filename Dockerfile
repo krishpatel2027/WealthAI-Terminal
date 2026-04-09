@@ -10,11 +10,15 @@ RUN npm run build
 FROM python:3.11-slim
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies (including git for pandas-ta dev branch)
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
+
+# Upgrade pip for better dependency resolution
+RUN pip install --upgrade pip
 
 # Copy requirements and install
 COPY requirements.txt .
