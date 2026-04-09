@@ -82,7 +82,7 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Agentic AI Terminal</h1>
-            <p className="text-sm text-slate-400">Powered by Qwen 2.5 32B</p>
+            <p className="text-sm text-slate-400">Powered by Agentic Cloud AI (Claude 3 & Gemini)</p>
           </div>
         </div>
       </header>
@@ -194,6 +194,15 @@ export default function App() {
           </div>
         )}
       </main>
+
+      {/* Footer */}
+      <footer className="max-w-5xl mx-auto mt-12 py-6 border-t border-slate-800 text-center flex flex-col md:flex-row items-center justify-between text-slate-500 text-sm">
+        <p>© 2026 WealthAI. All rights reserved.</p>
+        <div className="flex items-center gap-4 mt-4 md:mt-0">
+          <span className="flex items-center gap-1"><Brain size={14} /> Agentic RAG</span>
+          <span className="flex items-center gap-1"><Activity size={14} /> Real-Time Markets</span>
+        </div>
+      </footer>
     </div>
   );
 }
