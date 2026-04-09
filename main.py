@@ -60,12 +60,13 @@ try:
     # Fix Memory: Using Cloud Embeddings instead of local 300MB+ models
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
     
-    # Initialize the LLM
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
+    # Initialize the LLM (Switched to Anthropic to bypass Gemini quota)
+    from langchain_anthropic import ChatAnthropic
+    llm = ChatAnthropic(
+        model_name="claude-3-haiku-20240307",
         temperature=0.1,
     )
-    print("AI Brain: Using Google Gemini (Cloud API) - Memory Optimized")
+    print("AI Brain: Using Anthropic Claude (Cloud API) - Bypass Gemini Quota")
     
     # Path normalization for cross-platform hosting (Windows/Linux)
     DB_DIR = os.path.join(os.path.dirname(__file__), "chroma_db")
