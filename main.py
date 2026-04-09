@@ -1,6 +1,4 @@
-from langchain_ollama import OllamaLLM
-from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -59,18 +57,15 @@ except Exception as e:
 
 # --- INITIALIZE AI BRAIN ---
 try:
-    # Fix Storage/Memory issue by utilizing Google Gemini API 
-    from langchain_google_genai import ChatGoogleGenerativeAI
+    # Fix Memory: Using Cloud Embeddings instead of local 300MB+ models
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
     
-    # Pulls GOOGLE_API_KEY from the already loaded .env
+    # Initialize the LLM
     llm = ChatGoogleGenerativeAI(
         model="gemini-2.5-flash",
         temperature=0.1,
     )
-    print("AI Brain: Using Google Gemini (Cloud API) - Storage/Memory Fixed")
-
-    # Local embeddings are lightweight and safe to keep local
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    print("AI Brain: Using Google Gemini (Cloud API) - Memory Optimized")
     
     # Path normalization for cross-platform hosting (Windows/Linux)
     DB_DIR = os.path.join(os.path.dirname(__file__), "chroma_db")

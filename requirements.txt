@@ -10,10 +10,6 @@ langchain-core
 langchain-text-splitters
 chromadb
 langchain-chroma
-sentence-transformers
-redis
-langchain-ollama
-langchain-huggingface
 langchain-google-genai
 langchain-anthropic
 python-dotenv

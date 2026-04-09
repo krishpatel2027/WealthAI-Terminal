@@ -1,17 +1,21 @@
 import yfinance as yf
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langchain_core.documents import Document
 import os
 import sys
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Set encoding for Windows console (to support emojis)
 if sys.stdout.encoding != 'utf-8':
     sys.stdout.reconfigure(encoding='utf-8')
 
-# Initialize the local embedding model
-embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+# Initialize the cloud embedding model (fixes 512MB RAM limit on Render)
+embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
 
 # Create a persistent directory for our Vector Database
 DB_DIR = os.path.join(os.path.dirname(__file__), "chroma_db")
