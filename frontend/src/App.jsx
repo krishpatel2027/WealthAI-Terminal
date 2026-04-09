@@ -19,25 +19,8 @@ export default function App() {
       const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8001';
       console.log(`📡 Fetching from: ${baseUrl}`);
       
-      const [analyzeRes, vitalsRes] = await Promise.all([
-        fetch(`${baseUrl}/api/v1/analyze/${ticker}`),
-        fetch(`${baseUrl}/api/v1/vitals/${ticker}`)
-      ]);
-
-      // Check for non-OK responses before parsing JSON
-      if (!analyzeRes.ok) {
-        let errorMsg = `Analyze Error: ${analyzeRes.status}`;
-        try {
-          const errData = await analyzeRes.json();
-          errorMsg = errData.detail || errorMsg;
-        } catch (e) {
-          // If not JSON, try text
-          const errText = await analyzeRes.text();
-          errorMsg = errText || errorMsg;
-        }
-        throw new Error(errorMsg);
-      }
-
+      // Fetch Core Financial Vitals First (Guarantees the Chart works)
+      const vitalsRes = await fetch(`${baseUrl}/api/v1/vitals/${ticker}`);
       if (!vitalsRes.ok) {
         let errorMsg = `Vitals Error: ${vitalsRes.status}`;
         try {
@@ -49,24 +32,41 @@ export default function App() {
         }
         throw new Error(errorMsg);
       }
-
-      const analyzeResult = await analyzeRes.json();
+      
       const vitalsResult = await vitalsRes.json();
-
+      
       // Extract time and open/close from historical vitals data
       const dates = Object.keys(vitalsResult.data);
       const latestDate = dates[dates.length - 1];
       const latestOhlc = vitalsResult.data[latestDate];
 
+      let ai_thesis = "Loading AI Analysis...";
+      
+      try {
+        // Attempt to fetch AI Analysis (May fail due to 429 Rate Limit on free tiers)
+        const analyzeRes = await fetch(`${baseUrl}/api/v1/analyze/${ticker}`);
+        if (analyzeRes.ok) {
+           const analyzeResult = await analyzeRes.json();
+           ai_thesis = analyzeResult.ai_thesis;
+        } else {
+           const errData = await analyzeRes.json().catch(() => ({}));
+           ai_thesis = `⚠️ AI Brain Unavailable: ${errData.detail || analyzeRes.statusText}\n\nGoogle Gemini's free tier quota has been exhausted. Please wait a few minutes before trying again.`;
+        }
+      } catch (aiErr) {
+        ai_thesis = "⚠️ AI Brain connection failed. The AI service is currently down or rate-limited.";
+      }
+
       setData({
-        ...analyzeResult,
+        ticker: ticker.toUpperCase(),
         sma_20: vitalsResult.sma_20,
+        rsi_14: vitalsResult.rsi_14,
         open_price: latestOhlc.Open.toFixed(2),
         close_price: latestOhlc.Close.toFixed(2),
-        latest_time: latestDate
+        latest_time: latestDate,
+        ai_thesis: ai_thesis
       });
     } catch (err) {
-      setError(err.message || "Failed to connect to the AI Brain. Is your FastAPI server running on port 8001?");
+      setError(err.message || "Failed to connect to the backend server. Is your FastAPI server running?");
     } finally {
       setLoading(false);
     }
