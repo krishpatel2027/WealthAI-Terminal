@@ -1,4 +1,6 @@
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
+import google.genai as genai
+from google.genai import types
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -56,24 +58,26 @@ except Exception as e:
     cache = None
 
 # --- INITIALIZE AI BRAIN ---
+embeddings = None
+llm = None
+
 try:
     # Fix Memory: Using Cloud Embeddings instead of local 300MB+ models
     embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
-    
-    # Initialize the LLM (Switched to Anthropic to bypass Gemini quota)
-    from langchain_anthropic import ChatAnthropic
-    llm = ChatAnthropic(
-        model_name="claude-3-haiku-20240307",
-        temperature=0.1,
-    )
-    print("AI Brain: Using Anthropic Claude (Cloud API) - Bypass Gemini Quota")
-    
-    # Path normalization for cross-platform hosting (Windows/Linux)
-    DB_DIR = os.path.join(os.path.dirname(__file__), "chroma_db")
+    print("AI Brain: Embeddings Initialized")
 except Exception as e:
-    print(f"Error initializing AI Brain: {e}")
-    llm = None
-    embeddings = None
+    print(f"Error initializing Embeddings: {e}")
+
+# Initialize the Raw Google GenAI Client (More reliable than LangChain wrapper for this env)
+try:
+    genai_client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+    print("AI Brain: Raw Google GenAI Client Initialized")
+except Exception as e:
+    print(f"Error initializing GenAI Client: {e}")
+    genai_client = None
+
+# Path normalization for cross-platform hosting (Windows/Linux)
+DB_DIR = os.path.join(os.path.dirname(__file__), "chroma_db")
 
 # --- PYDANTIC MODELS ---
 class VitalsResponse(BaseModel):
@@ -94,10 +98,15 @@ class AIAnalysisResponse(BaseModel):
     stop_loss: float
     target_price: float
     ai_thesis: str
+    detailed_analysis: str
 
 class PopulateResponse(BaseModel):
     message: str
     status: str
+
+class ChatRequest(BaseModel):
+    message: str
+    ticker: str = ""
 
 # --- UTILITIES ---
 def extract_latest_fundamental(df, key):
@@ -190,11 +199,35 @@ def get_vitals(ticker: str, period: str = "3mo"):
         return response_data
 
     except HTTPException as he:
-        # Re-raise HTTPExceptions (like 404 from get_vitals)
         raise he
     except Exception as e:
         print(f"Analysis Error: {e}")
         raise HTTPException(status_code=500, detail=f"AI Analysis Failed: {str(e)}")
+
+@app.get("/api/v1/indices")
+def get_market_indices():
+    """Fetch live NIFTY 50 and SENSEX prices"""
+    try:
+        nifty = yf.Ticker("^NSEI")
+        sensex = yf.Ticker("^BSESN")
+        nifty_hist = nifty.history(period="2d")
+        sensex_hist = sensex.history(period="2d")
+        
+        nifty_price = round(nifty_hist['Close'].iloc[-1], 2) if not nifty_hist.empty else 0
+        sensex_price = round(sensex_hist['Close'].iloc[-1], 2) if not sensex_hist.empty else 0
+        
+        nifty_prev = nifty_hist['Close'].iloc[-2] if len(nifty_hist) >= 2 else nifty_price
+        sensex_prev = sensex_hist['Close'].iloc[-2] if len(sensex_hist) >= 2 else sensex_price
+        
+        nifty_change = round(((nifty_price - nifty_prev) / nifty_prev) * 100, 2) if nifty_prev else 0
+        sensex_change = round(((sensex_price - sensex_prev) / sensex_prev) * 100, 2) if sensex_prev else 0
+        
+        return {
+            "nifty": {"price": nifty_price, "change": nifty_change},
+            "sensex": {"price": sensex_price, "change": sensex_change}
+        }
+    except Exception as e:
+        return {"nifty": {"price": 0, "change": 0}, "sensex": {"price": 0, "change": 0}}
 
 @app.get("/api/v1/analyze/{ticker}", response_model=AIAnalysisResponse)
 def analyze_stock_agent(ticker: str):
@@ -216,26 +249,31 @@ def analyze_stock_agent(ticker: str):
         if not news_context:
             news_context = "No recent news context available."
 
+        fundamentals = vitals_data.fundamentals
         prompt = f"""
-        You are a quantitative AI analyst.
-        Analyze technicals and news for {ticker}.
+        You are a friendly yet expert stock market mentor and quantitative AI analyst.
+        Your audience is a BEGINNER investor who wants to learn. Analyze {ticker} thoroughly.
 
-        VITALS:
-        - Price: ₹{vitals_data.latest_price}
-        - RSI: {vitals_data.rsi_14}
-        - SMA: ₹{vitals_data.sma_20}
+        LIVE VITALS:
+        - Current Price: ₹{vitals_data.latest_price}
+        - RSI (14-day): {vitals_data.rsi_14} (below 30 = oversold/cheap, above 70 = overbought/expensive)
+        - SMA (20-day): ₹{vitals_data.sma_20} (simple moving average; price above SMA = uptrend)
+        - Total Revenue: {fundamentals.get('Total_Revenue', 0)}
+        - Free Cash Flow: {fundamentals.get('Free_Cash_Flow', 0)}
+        - Total Assets: {fundamentals.get('Total_Assets', 0)}
+        - Total Debt: {fundamentals.get('Total_Debt', 0)}
 
-        QUALITATIVE CONTEXT:
+        NEWS CONTEXT:
         {news_context}
 
         TASK:
-        You must return exactly ONE valid JSON object and nothing else. Do not use markdown wrapping.
-        Format:
+        Return exactly ONE valid JSON object and NOTHING else. No markdown, no backticks.
         {{
             "signal": "STRONG BUY" | "BUY" | "HOLD" | "SELL" | "STRONG SELL",
-            "stop_loss": <numeric float below current price if buy, above if sell>,
-            "target_price": <numeric float above current price if buy, below if sell>,
-            "thesis": "<String: 3 sentence explanation>"
+            "stop_loss": <number: safe exit price to limit losses>,
+            "target_price": <number: realistic profit target>,
+            "thesis": "<2-3 sentence quick verdict for the banner>",
+            "detailed_analysis": "<A comprehensive, beginner-friendly analysis covering these sections separated by newlines: 📊 WHAT IS THIS STOCK? (company overview in 2 lines), 📈 TECHNICAL ANALYSIS (explain RSI and SMA in simple terms, what they tell us now), 💰 FUNDAMENTAL HEALTH (revenue, cash flow, debt — is the company financially strong?), 🤔 WHY THIS SIGNAL? (explain your buy/sell/hold reasoning step by step), ⏰ WHEN TO ACT? (ideal entry point, how long to hold), ⚠️ RISKS (what could go wrong), 🎓 LEARNING TIP (one actionable lesson a beginner can take away)>"
         }}
         """
 
@@ -257,9 +295,16 @@ def analyze_stock_agent(ticker: str):
                     raise e
         
         if not ai_verdict:
-            raise HTTPException(status_code=503, detail="AI Brain is currently overloaded. Please try again in 30 seconds.")
-
-        thesis_text_raw = ai_verdict.content if hasattr(ai_verdict, 'content') else str(ai_verdict)
+            # DEMO FALLBACK: Prevent Quota errors from breaking the hackathon UI
+            rsi_val = vitals_data.rsi_14
+            demo_signal = "STRONG BUY" if rsi_val < 30 else "BUY" if rsi_val < 45 else "HOLD" if rsi_val < 60 else "SELL" if rsi_val < 75 else "STRONG SELL"
+            demo_sl = round(vitals_data.latest_price * 0.92, 2)
+            demo_tp = round(vitals_data.latest_price * 1.12, 2)
+            demo_thesis = f"{demo_signal}: RSI at {rsi_val} confirms momentum. Demo-mode fallback active."
+            demo_detail = f"📊 WHAT IS THIS STOCK?\n{ticker} is currently trading at ₹{vitals_data.latest_price}.\n\n📈 TECHNICAL ANALYSIS\nRSI is at {rsi_val} — {'oversold territory, suggesting the stock may be undervalued' if rsi_val < 30 else 'neutral zone' if rsi_val < 70 else 'overbought, suggesting caution'}. The 20-day SMA is ₹{vitals_data.sma_20}.\n\n💰 FUNDAMENTAL HEALTH\nRevenue and cash flow data available in the Fundamentals panel.\n\n🤔 WHY THIS SIGNAL?\nBased on RSI positioning and price-to-SMA relationship.\n\n⏰ WHEN TO ACT?\nConsider entries near ₹{demo_sl} with target ₹{demo_tp}.\n\n⚠️ RISKS\nThis is demo-mode analysis. Always do your own research.\n\n🎓 LEARNING TIP\nRSI below 30 often signals a buying opportunity — but always confirm with volume and trend!"
+            thesis_text_raw = json.dumps({"signal": demo_signal, "stop_loss": demo_sl, "target_price": demo_tp, "thesis": demo_thesis, "detailed_analysis": demo_detail})
+        else:
+            thesis_text_raw = ai_verdict.content if hasattr(ai_verdict, 'content') else str(ai_verdict)
         
         # Clean JSON
         thesis_text_raw = thesis_text_raw.replace("```json", "").replace("```", "").strip()
@@ -270,11 +315,13 @@ def analyze_stock_agent(ticker: str):
             stop_loss = float(parsed_json.get("stop_loss", vitals_data.latest_price * 0.95))
             target_price = float(parsed_json.get("target_price", vitals_data.latest_price * 1.10))
             thesis = parsed_json.get("thesis", "Unable to parse thesis text.")
+            detailed_analysis = parsed_json.get("detailed_analysis", "Detailed analysis unavailable.")
         except json.JSONDecodeError:
             signal = "HOLD"
             stop_loss = vitals_data.latest_price * 0.95
             target_price = vitals_data.latest_price * 1.10
             thesis = thesis_text_raw
+            detailed_analysis = "Could not parse AI response. Raw output shown in the thesis banner above."
 
         return AIAnalysisResponse(
             ticker=ticker.upper(),
@@ -284,11 +331,84 @@ def analyze_stock_agent(ticker: str):
             signal=signal.upper(),
             stop_loss=round(stop_loss, 2),
             target_price=round(target_price, 2),
-            ai_thesis=thesis
+            ai_thesis=thesis,
+            detailed_analysis=detailed_analysis
         )
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/v1/chat")
+def ai_chat(req: ChatRequest):
+    """AI Financial Assistant Chatbot"""
+    try:
+        # Get stock context if ticker provided
+        stock_context = ""
+        if req.ticker:
+            try:
+                t = yf.Ticker(req.ticker)
+                hist = t.history(period="5d")
+                if not hist.empty:
+                    price = round(hist['Close'].iloc[-1], 2)
+                    prev = round(hist['Close'].iloc[-2], 2) if len(hist) >= 2 else price
+                    change = round(((price - prev) / prev) * 100, 2)
+                    info = t.info
+                    stock_context = f"""\nCurrent context - {req.ticker}:
+- Price: ₹{price} ({'+' if change >= 0 else ''}{change}% today)
+- 52W High: {info.get('fiftyTwoWeekHigh', 'N/A')}
+- 52W Low: {info.get('fiftyTwoWeekLow', 'N/A')}
+- Market Cap: {info.get('marketCap', 'N/A')}
+- P/E Ratio: {info.get('trailingPE', 'N/A')}
+- Sector: {info.get('sector', 'N/A')}
+- Industry: {info.get('industry', 'N/A')}
+- Summary: {(info.get('longBusinessSummary', '') or '')[:300]}"""
+            except Exception:
+                stock_context = f"\nUser is viewing {req.ticker} but detailed data is unavailable."
+
+        system_prompt = f"""You are WealthAI Assistant, a powerful AI financial advisor built into the WealthAI trading terminal (developed by Finsemble).
+
+Your role:
+- Answer ANY question about stocks, markets, and financial concepts.
+- Help users navigate the platform and analyze stocks.
+- Be concise. Use emojis sparingly.
+- If asked about a specific stock, use the live context provided below.
+
+ACTION TAG PROTOCOL:
+If the user wants you to do something, append exactly ONE of these tags at the VERY END of your response (hidden command):
+1. Navigate to a stock: `[ACTION:NAVIGATE:SYMBOL]` (e.g. `[ACTION:NAVIGATE:ADANIPOWER.NS]`. Symbol must be uppercase and include .NS for Indian stocks).
+2. Add to Watchlist: `[ACTION:WATCHLIST:SYMBOL]` (e.g. `[ACTION:WATCHLIST:RELIANCE.NS]`).
+
+Example: "I've navigated you to Adani Power. [ACTION:NAVIGATE:ADANIPOWER.NS]"
+
+{stock_context}
+
+IMPORTANT: Keep responses under 200 words. Respond in plain conversational text with the optional ACTION TAG at the end."""
+
+        if genai_client:
+            try:
+                # Use standard contents for Chat
+                response = genai_client.models.generate_content(
+                    model='gemini-flash-latest',
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_prompt,
+                        temperature=0.7
+                    ),
+                    contents=req.message
+                )
+                return {"reply": response.text}
+            except Exception as e:
+                print(f"GenAI SDK Error: {e}")
+        
+        # Fallback if LLM is unavailable
+        msg = req.message.lower()
+        if stock_context:
+            return {"reply": f"I'm currently in demo mode, but here's what I know:\n\n{stock_context}\n\nFor deeper analysis, check the TradingView Technical Analysis widget and the AI Deep Analysis panel on the right side of your screen!"}
+        elif 'hello' in msg or 'hi' in msg:
+            return {"reply": "👋 Welcome to WealthAI! I'm your AI financial assistant. Search for a stock in the watchlist, and I can help explain its technicals, fundamentals, and trading strategies. What would you like to know?"}
+        else:
+            return {"reply": "I'm in demo mode right now. Try searching for a stock like RELIANCE.NS or AAPL, and I'll provide context about it. You can also ask me about RSI, SMA, P/E ratios, or any investing concept!"}
+    except Exception as e:
+        return {"reply": f"Sorry, I encountered an error: {str(e)}. Please try again."}
 
 # --- SERVE FRONTEND (Must be at the bottom) ---
 frontend_path = os.path.join(os.path.dirname(__file__), "frontend", "dist")
